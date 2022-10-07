@@ -32,7 +32,7 @@ macro_rules! get_features {
                 $(
                     stringify!($feature_name) => $feature_type::build_features(&f.args, shared_resources),
                 )*
-                _ => bail!("Feature {} not implemented", f.factory_name),
+                _ => anyhow::bail!("Feature {} not implemented", f.factory_name),
             };
             Ok(features?
                 .into_iter()

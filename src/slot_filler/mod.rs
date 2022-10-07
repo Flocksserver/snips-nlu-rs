@@ -10,13 +10,12 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
-use failure::{format_err, ResultExt};
 use snips_nlu_utils::token::Token;
 
-use crate::errors::*;
 use crate::models::ProcessingUnitMetadata;
 use crate::resources::SharedResources;
 use crate::slot_utils::InternalSlot;
+use anyhow::{anyhow, Context, Result};
 
 pub use self::crf_slot_filler::*;
 use self::crf_utils::TaggingScheme;
@@ -32,18 +31,18 @@ pub fn build_slot_filler<P: AsRef<Path>>(
     shared_resources: Arc<SharedResources>,
 ) -> Result<Box<dyn SlotFiller>> {
     let metadata_path = path.as_ref().join("metadata.json");
-    let metadata_file = File::open(&metadata_path).with_context(|_| {
+    let metadata_file = File::open(&metadata_path).with_context(|| {
         format!(
             "Cannot open slot filler metadata file '{:?}'",
             &metadata_path
         )
     })?;
     let metadata: ProcessingUnitMetadata = serde_json::from_reader(metadata_file)
-        .with_context(|_| "Cannot deserialize slot filler json data")?;
+        .with_context(|| "Cannot deserialize slot filler json data")?;
     match metadata {
         ProcessingUnitMetadata::CrfSlotFiller => {
             Ok(Box::new(CRFSlotFiller::from_path(path, shared_resources)?) as _)
         }
-        _ => Err(format_err!("{:?} is not a slot filler", metadata)),
+        _ => Err(anyhow!("{:?} is not a slot filler", metadata)),
     }
 }

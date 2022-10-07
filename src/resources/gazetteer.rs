@@ -1,4 +1,4 @@
-use crate::errors::*;
+use anyhow::Result;
 use snips_nlu_utils::string::hash_str_to_i32;
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read};

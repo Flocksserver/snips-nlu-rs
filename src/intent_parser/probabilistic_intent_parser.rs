@@ -4,14 +4,14 @@ use std::iter::FromIterator;
 use std::path::Path;
 use std::sync::Arc;
 
-use failure::{format_err, ResultExt};
+use crate::errors::SnipsNluError;
 
-use crate::errors::*;
 use crate::intent_classifier::{build_intent_classifier, IntentClassifier};
 use crate::models::ProbabilisticParserModel;
 use crate::resources::SharedResources;
 use crate::slot_filler::{build_slot_filler, SlotFiller};
 use crate::utils::IntentName;
+use anyhow::{anyhow, Context, Result};
 
 use super::{IntentClassifierResult, IntentParser, InternalParsingResult};
 use crate::slot_utils::InternalSlot;
@@ -27,14 +27,14 @@ impl ProbabilisticIntentParser {
         shared_resources: Arc<SharedResources>,
     ) -> Result<Self> {
         let parser_model_path = path.as_ref().join("intent_parser.json");
-        let model_file = File::open(&parser_model_path).with_context(|_| {
+        let model_file = File::open(&parser_model_path).with_context(|| {
             format!(
                 "Cannot open ProbabilisticIntentParser file '{:?}'",
                 &parser_model_path
             )
         })?;
         let model: ProbabilisticParserModel = serde_json::from_reader(model_file)
-            .with_context(|_| "Cannot deserialize ProbabilisticIntentParser json data")?;
+            .with_context(|| "Cannot deserialize ProbabilisticIntentParser json data")?;
         let intent_classifier_path = path.as_ref().join("intent_classifier");
         let intent_classifier =
             build_intent_classifier(intent_classifier_path, shared_resources.clone())?;
@@ -87,7 +87,7 @@ impl IntentParser for ProbabilisticIntentParser {
     fn get_slots(&self, input: &str, intent: &str) -> Result<Vec<InternalSlot>> {
         self.slot_fillers
             .get(intent)
-            .ok_or_else(|| format_err!("Unknown intent: {}", intent))
+            .ok_or_else(|| anyhow!("Unknown intent: {}", intent))
             .and_then(|slot_filler| slot_filler.get_slots(input))
     }
 }

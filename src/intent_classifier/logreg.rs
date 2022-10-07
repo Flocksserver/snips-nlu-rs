@@ -1,7 +1,7 @@
 use ndarray::prelude::*;
 use ndarray::{array, stack};
 
-use crate::errors::*;
+use anyhow::Result;
 
 /// The multiclass probability estimates are derived from binary (one-vs.-rest)
 /// estimates by simple normalization

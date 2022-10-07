@@ -5,18 +5,17 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use failure::ResultExt;
 use log::info;
 use serde::Deserialize;
 use snips_nlu_ontology::Language;
 
 use crate::entity_parser::{CachingBuiltinEntityParser, CachingCustomEntityParser};
-use crate::errors::*;
 use crate::models::nlu_engine::NluEngineModel;
 use crate::resources::gazetteer::{Gazetteer, HashSetGazetteer};
 use crate::resources::stemmer::{HashMapStemmer, Stemmer};
 use crate::resources::word_clusterer::{HashMapWordClusterer, WordClusterer};
 use crate::resources::SharedResources;
+use anyhow::{anyhow, Context, Result};
 
 #[derive(Debug, Deserialize, Clone)]
 struct ResourcesMetadata {
@@ -35,7 +34,7 @@ pub fn load_shared_resources<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
     let metadata_file_path = resources_dir.as_ref().join("metadata.json");
     let metadata_file = File::open(&metadata_file_path)?;
     let metadata: ResourcesMetadata =
-        serde_json::from_reader(metadata_file).with_context(|_| {
+        serde_json::from_reader(metadata_file).with_context(|| {
             format!(
                 "Cannot deserialize resources metadata file '{:?}'",
                 metadata_file_path
@@ -63,10 +62,11 @@ pub fn load_shared_resources<P: AsRef<Path>, Q: AsRef<Path>, R: AsRef<Path>>(
 pub fn load_engine_shared_resources<P: AsRef<Path>>(engine_dir: P) -> Result<Arc<SharedResources>> {
     let nlu_engine_file = engine_dir.as_ref().join("nlu_engine.json");
     let model_file = File::open(&nlu_engine_file)
-        .with_context(|_| format!("Could not open nlu engine file {:?}", nlu_engine_file))?;
+        .with_context(|| format!("Could not open nlu engine file {:?}", nlu_engine_file))?;
     let model: NluEngineModel = serde_json::from_reader(model_file)
-        .with_context(|_| "Could not deserialize nlu engine json file")?;
-    let language = Language::from_str(&model.dataset_metadata.language_code)?;
+        .with_context(|| "Could not deserialize nlu engine json file")?;
+    let language =
+        Language::from_str(&model.dataset_metadata.language_code).map_err(|e| anyhow!(e))?;
     let resources_path = engine_dir
         .as_ref()
         .join("resources")
@@ -85,9 +85,9 @@ fn load_stemmer<P: AsRef<Path>>(
         let stems_path = stemming_directory.join(stems).with_extension("txt");
         info!("Loading stemmer ({:?}) ...", stems_path);
         let stems_reader = File::open(&stems_path)
-            .with_context(|_| format!("Cannot open stems file {:?}", stems_path))?;
+            .with_context(|| format!("Cannot open stems file {:?}", stems_path))?;
         let stemmer = HashMapStemmer::from_reader(stems_reader)
-            .with_context(|_| format!("Cannot read stems file {:?}", stems_path))?;
+            .with_context(|| format!("Cannot read stems file {:?}", stems_path))?;
         info!("Stemmer loaded");
         Ok(Some(Arc::new(stemmer)))
     } else {
@@ -111,9 +111,9 @@ fn load_gazetteers<P: AsRef<Path>>(
                 gazetteer_name, gazetteer_path
             );
             let file = File::open(&gazetteer_path)
-                .with_context(|_| format!("Cannot open gazetteer file {:?}", gazetteer_path))?;
+                .with_context(|| format!("Cannot open gazetteer file {:?}", gazetteer_path))?;
             let gazetteer = HashSetGazetteer::from_reader(file)
-                .with_context(|_| format!("Cannot read gazetteer file {:?}", gazetteer_path))?;
+                .with_context(|| format!("Cannot read gazetteer file {:?}", gazetteer_path))?;
             gazetteers.insert(gazetteer_name.to_string(), Arc::new(gazetteer));
             info!("Gazetteer '{}' loaded", gazetteer_name);
         }
@@ -132,15 +132,14 @@ fn load_word_clusterers<P: AsRef<Path>>(
             let clusters_path = word_clusters_directory
                 .join(clusters_name.clone())
                 .with_extension("txt");
-            ;
             info!(
                 "Loading word clusters '{}' ({:?}) ...",
                 clusters_name, clusters_path
             );
             let word_clusters_reader = File::open(&clusters_path)
-                .with_context(|_| format!("Cannot open word clusters file {:?}", clusters_path))?;
+                .with_context(|| format!("Cannot open word clusters file {:?}", clusters_path))?;
             let word_clusterer = HashMapWordClusterer::from_reader(word_clusters_reader)
-                .with_context(|_| format!("Cannot read word clusters file {:?}", clusters_path))?;
+                .with_context(|| format!("Cannot read word clusters file {:?}", clusters_path))?;
             word_clusterers.insert(clusters_name.to_string(), Arc::new(word_clusterer));
             info!("Word clusters '{}' loaded", clusters_name);
         }
@@ -159,7 +158,7 @@ fn load_stop_words<P: AsRef<Path>>(
             .with_extension("txt");
         info!("Loading stop words ({:?}) ...", stop_words_path);
         let file = File::open(&stop_words_path)
-            .with_context(|_| format!("Cannot open word stop words file {:?}", stop_words_path))?;
+            .with_context(|| format!("Cannot open word stop words file {:?}", stop_words_path))?;
         let reader = BufReader::new(file);
         let mut stop_words = HashSet::<String>::new();
         for line in reader.lines() {

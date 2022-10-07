@@ -5,14 +5,12 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use crfsuite::Tagger as CRFSuiteTagger;
-use failure::{format_err, ResultExt};
 use itertools::Itertools;
 use log::{debug, info};
 use snips_nlu_ontology::Language;
 use snips_nlu_utils::language::Language as NluUtilsLanguage;
 use snips_nlu_utils::token::{tokenize, Token};
 
-use crate::errors::*;
 use crate::language::FromLanguage;
 use crate::models::SlotFillerModel;
 use crate::resources::SharedResources;
@@ -21,6 +19,7 @@ use crate::slot_filler::feature_processor::ProbabilisticFeatureProcessor;
 use crate::slot_filler::SlotFiller;
 use crate::slot_utils::*;
 use crate::utils::{EntityName, SlotName};
+use anyhow::{anyhow, Context, Result};
 
 pub struct CRFSlotFiller {
     language: Language,
@@ -37,21 +36,21 @@ impl CRFSlotFiller {
     ) -> Result<Self> {
         info!("Loading CRF slot filler ({:?}) ...", path.as_ref());
         let slot_filler_model_path = path.as_ref().join("slot_filler.json");
-        let model_file = fs::File::open(&slot_filler_model_path).with_context(|_| {
+        let model_file = fs::File::open(&slot_filler_model_path).with_context(|| {
             format!(
                 "Cannot open CRFSlotFiller file '{:?}'",
                 &slot_filler_model_path
             )
         })?;
         let model: SlotFillerModel = serde_json::from_reader(model_file)
-            .with_context(|_| "Cannot deserialize CRFSlotFiller json data")?;
+            .with_context(|| "Cannot deserialize CRFSlotFiller json data")?;
 
         let tagging_scheme = TaggingScheme::from_u8(model.config.tagging_scheme)?;
         let slot_name_mapping = model.slot_name_mapping;
         let (tagger, feature_processor) =
             if let Some(crf_model_file) = model.crf_model_file.as_ref() {
                 let crf_path = path.as_ref().join(crf_model_file);
-                let tagger = CRFSuiteTagger::create_from_file(&crf_path).with_context(|_| {
+                let tagger = CRFSuiteTagger::create_from_file(&crf_path).with_context(|| {
                     format!("Cannot create CRFSuiteTagger from file '{:?}'", &crf_path)
                 })?;
                 let feature_processor = ProbabilisticFeatureProcessor::new(
@@ -62,7 +61,7 @@ impl CRFSlotFiller {
             } else {
                 (None, None)
             };
-        let language = Language::from_str(&model.language_code)?;
+        let language = Language::from_str(&model.language_code).map_err(|e| anyhow!(e))?;
 
         info!("CRF slot filler loaded");
 
@@ -93,7 +92,7 @@ impl SlotFiller for CRFSlotFiller {
             let features = feature_processor.compute_features(&&*tokens)?;
             let tags = tagger
                 .lock()
-                .map_err(|e| format_err!("Poisonous mutex: {}", e))?
+                .map_err(|e| anyhow!("Poisonous mutex: {}", e))?
                 .tag(&features)?
                 .into_iter()
                 .map(|tag| decode_tag(&*tag))
@@ -120,7 +119,7 @@ impl SlotFiller for CRFSlotFiller {
             let features = feature_processor.compute_features(&tokens)?;
             let tagger = tagger
                 .lock()
-                .map_err(|e| format_err!("poisonous mutex: {}", e))?;
+                .map_err(|e| anyhow!("poisonous mutex: {}", e))?;
             let tagger_labels = tagger
                 .labels()?
                 .into_iter()

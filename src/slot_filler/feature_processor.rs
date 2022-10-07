@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use failure::bail;
 use snips_nlu_utils::token::Token;
 
-use crate::errors::*;
 use crate::models::FeatureFactory;
 use crate::resources::SharedResources;
 use crate::slot_filler::features::*;
+use anyhow::Result;
 
 pub struct ProbabilisticFeatureProcessor {
     features_offsetters: Vec<FeatureOffsetter>,

@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use failure::{bail, format_err};
-
-use crate::errors::*;
 use crate::slot_utils::InternalSlot;
+use anyhow::{anyhow, bail, Result};
 use snips_nlu_utils::string::suffix_from_char_index;
 use snips_nlu_utils::token::Token;
 
@@ -180,7 +178,7 @@ pub fn tags_to_slots(
                 entity: intent_slots_mapping
                     .get(&s.slot_name)
                     .ok_or_else(|| {
-                        format_err!(
+                        anyhow!(
                             "Missing slot to entity mapping for slot name: {}",
                             s.slot_name
                         )

@@ -5,17 +5,16 @@ pub mod probabilistic_intent_parser;
 use std::path::Path;
 use std::sync::Arc;
 
-use failure::format_err;
 use snips_nlu_ontology::IntentClassifierResult;
 
 pub use self::deterministic_intent_parser::DeterministicIntentParser;
 pub use self::lookup_intent_parser::LookupIntentParser;
 pub use self::probabilistic_intent_parser::ProbabilisticIntentParser;
-use crate::errors::*;
 use crate::models::ProcessingUnitMetadata;
 use crate::resources::SharedResources;
 pub use crate::slot_utils::InternalSlot;
 use crate::utils::IntentName;
+use anyhow::{anyhow, Result};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InternalParsingResult {
@@ -76,6 +75,6 @@ pub fn build_intent_parser<P: AsRef<Path>>(
         ProcessingUnitMetadata::ProbabilisticIntentParser => Ok(Box::new(
             ProbabilisticIntentParser::from_path(path, shared_resources)?,
         ) as _),
-        _ => Err(format_err!("{:?} is not an intent parser", metadata)),
+        _ => Err(anyhow!("{:?} is not an intent parser", metadata)),
     }
 }

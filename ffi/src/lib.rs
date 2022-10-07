@@ -8,7 +8,7 @@ use std::io::Cursor;
 use std::slice;
 use std::sync::Mutex;
 
-use failure::{format_err, ResultExt};
+use crate::errors::SnipsNluError;
 use ffi_utils::*;
 use snips_nlu_lib::SnipsNluEngine;
 use snips_nlu_ontology_ffi_macros::{CIntentClassifierResultArray, CIntentParserResult, CSlotList};
@@ -22,7 +22,7 @@ macro_rules! get_nlu_engine {
         unsafe { <CSnipsNluEngine as ffi_utils::RawBorrow<CSnipsNluEngine>>::raw_borrow($opaque) }?
             .0
             .lock()
-            .map_err(|e| format_err!("poisoning pointer: {}", e))?
+            .map_err(|e| anyhow!("poisoning pointer: {}", e))?
     }};
 }
 

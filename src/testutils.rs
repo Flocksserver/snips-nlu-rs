@@ -6,11 +6,11 @@ use ndarray::prelude::*;
 use snips_nlu_ontology::{BuiltinEntity, BuiltinEntityKind};
 
 use crate::entity_parser::{BuiltinEntityParser, CustomEntity, CustomEntityParser};
-use crate::errors::*;
 use crate::resources::gazetteer::Gazetteer;
 use crate::resources::stemmer::Stemmer;
 use crate::resources::word_clusterer::WordClusterer;
 use crate::resources::SharedResources;
+use anyhow::{Context, Result};
 
 pub fn assert_epsilon_eq_array1(a: &Array1<f32>, b: &Array1<f32>, epsilon: f32) {
     assert_eq!(a.dim(), b.dim());

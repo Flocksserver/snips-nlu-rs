@@ -4,7 +4,6 @@ use std::io;
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 
-use failure::{format_err, ResultExt};
 use zip::ZipArchive;
 
 use snips_nlu_ontology::BuiltinEntity;
@@ -12,21 +11,24 @@ use snips_nlu_utils::range::ranges_overlap;
 use snips_nlu_utils::string::{substring_with_char_range, suffix_from_char_index};
 
 use crate::entity_parser::custom_entity_parser::CustomEntity;
-use crate::errors::*;
+use anyhow::{anyhow, Result};
 
 pub type IntentName = String;
 pub type SlotName = String;
 pub type EntityName = String;
 
 pub trait IterOps<T, I>: IntoIterator<Item = T>
-    where I: IntoIterator<Item = T>,
-          T: PartialEq {
+where
+    I: IntoIterator<Item = T>,
+    T: PartialEq,
+{
     fn intersect(self, other: I) -> Vec<T>;
 }
 
 impl<T, I> IterOps<T, I> for I
-    where I: IntoIterator<Item = T>,
-          T: PartialEq
+where
+    I: IntoIterator<Item = T>,
+    T: PartialEq,
 {
     fn intersect(self, other: I) -> Vec<T> {
         let v_other: Vec<_> = other.into_iter().collect();
@@ -65,11 +67,10 @@ pub fn extract_nlu_engine_zip_archive<R: io::Read + io::Seek>(
     zip_reader: R,
     dest_path: &Path,
 ) -> Result<PathBuf> {
-    let mut archive =
-        ZipArchive::new(zip_reader).with_context(|_| "Could not read nlu engine zip data")?;
+    let mut archive = ZipArchive::new(zip_reader).unwrap();
     for file_index in 0..archive.len() {
         let mut file = archive.by_index(file_index)?;
-        let outpath = dest_path.join(file.sanitized_name());
+        let outpath = dest_path.join(file.mangled_name());
 
         if (&*file.name()).ends_with('/') || (&*file.name()).ends_with('\\') {
             fs::create_dir_all(&outpath)?;
@@ -83,7 +84,7 @@ pub fn extract_nlu_engine_zip_archive<R: io::Read + io::Seek>(
             io::copy(&mut file, &mut outfile)?;
         }
     }
-    let first_archive_file = archive.by_index(0)?.sanitized_name();
+    let first_archive_file = archive.by_index(0)?.mangled_name();
     let engine_dir_path = first_archive_file
         .components()
         .find(|component| {
@@ -93,11 +94,13 @@ pub fn extract_nlu_engine_zip_archive<R: io::Read + io::Seek>(
                 false
             }
         })
-        .ok_or_else(|| format_err!("Trained engine archive is incorrect"))?
+        .ok_or_else(|| anyhow!("Trained engine archive is incorrect"))
+        .unwrap()
         .as_os_str();
     let engine_dir_name = engine_dir_path
         .to_str()
-        .ok_or_else(|| format_err!("Engine directory name is empty"))?;
+        .ok_or_else(|| anyhow!("Engine directory name is empty"))
+        .unwrap();
     Ok(dest_path.join(engine_dir_name))
 }
 

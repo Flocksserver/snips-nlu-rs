@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::iter::FromIterator;
@@ -5,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use failure::ResultExt;
 use itertools::Itertools;
 use log::info;
 use snips_nlu_ontology::{BuiltinGazetteerEntityKind, GrammarEntityKind};
@@ -23,7 +23,7 @@ use crate::resources::loading::load_engine_shared_resources;
 use crate::resources::stemmer::Stemmer;
 use crate::resources::SharedResources;
 
-use super::errors::{NluInjectionError, NluInjectionErrorKind};
+use super::errors::NluInjectionErrorKind;
 
 pub type InjectedEntity = String;
 pub type InjectedValue = String;
@@ -86,7 +86,7 @@ impl<P: AsRef<Path>> NluInjector<P> {
         self
     }
 
-    pub fn inject(self) -> Result<(), NluInjectionError> {
+    pub fn inject(self) -> anyhow::Result<()> {
         info!("Starting injection...");
 
         info!("Retrieving parsers paths...");
@@ -103,7 +103,7 @@ impl<P: AsRef<Path>> NluInjector<P> {
         let shared_resources = if let Some(resources) = self.shared_resources {
             Ok(resources)
         } else {
-            load_engine_shared_resources(self.nlu_engine_dir.as_ref()).with_context(|_| {
+            load_engine_shared_resources(self.nlu_engine_dir.as_ref()).with_context(|| {
                 NluInjectionErrorKind::InternalInjectionError {
                     msg: format!(
                         "Could not load shared resources from {:?}",
@@ -111,7 +111,8 @@ impl<P: AsRef<Path>> NluInjector<P> {
                     ),
                 }
             })
-        }?;
+        }
+        .map_err(|e| anyhow!(e))?;
 
         let maybe_stemmer = shared_resources.stemmer.as_ref();
 
@@ -134,34 +135,26 @@ impl<P: AsRef<Path>> NluInjector<P> {
                     Ok((entity, normalize_entity_values))
                 }
             })
-            .collect::<Result<HashMap<_, _>, NluInjectionError>>()?;
+            .collect::<Result<HashMap<_, _>, NluInjectionErrorKind>>()?;
 
         for (entity, new_entity_values) in normalized_entity_values {
             info!("Injecting values for entity '{}'", entity);
 
             let parser_dir = &parsers_dirs[&entity];
-            let mut gazetteer_parser = GazetteerEntityParser::from_folder(parser_dir)
-                .with_context(|_| NluInjectionErrorKind::InternalInjectionError {
-                    msg: format!("could not load gazetteer parser in {:?}", parser_dir),
-                })?;
+            let mut gazetteer_parser =
+                GazetteerEntityParser::from_folder(parser_dir).map_err(|e| anyhow!(e))?;
 
             gazetteer_parser
                 .inject_new_values(new_entity_values, true, self.from_vanilla)
-                .with_context(|_| NluInjectionErrorKind::InternalInjectionError {
-                    msg: format!("could not inject values for entity '{}'", entity),
-                })?;
+                .map_err(|e| anyhow!(e))?;
 
-            fs::remove_dir_all(parser_dir.clone()).with_context(|_| {
+            fs::remove_dir_all(parser_dir.clone()).with_context(|| {
                 NluInjectionErrorKind::InternalInjectionError {
                     msg: format!("could not remove previous parser at {:?}", parser_dir),
                 }
             })?;
 
-            gazetteer_parser.dump(&parser_dir).with_context(|_| {
-                NluInjectionErrorKind::InternalInjectionError {
-                    msg: format!("failed to dump gazetteer parser in {:?}", parser_dir),
-                }
-            })?;
+            gazetteer_parser.dump(&parser_dir).map_err(|e| anyhow!(e))?;
         }
 
         info!("Injection performed with success !");
@@ -174,7 +167,7 @@ fn get_entity_parsers_dirs(
     maybe_builtin_parser_info: &Option<BuiltinGazetteerParserInfo>,
     custom_parser_info: &CustomGazetteerParserInfo,
     entity_values: &HashMap<String, Vec<String>>,
-) -> Result<HashMap<String, PathBuf>, NluInjectionError> {
+) -> anyhow::Result<HashMap<String, PathBuf>> {
     entity_values
         .keys()
         .map(|entity| {
@@ -191,12 +184,12 @@ fn get_entity_parsers_dirs(
                     })
                     .ok_or_else(|| {
                         let msg = format!("could not find entity '{}' in engine", entity);
-                        NluInjectionErrorKind::EntityNotInjectable { msg }
+                        anyhow!(msg)
                     })
             } else if BuiltinGazetteerEntityKind::from_identifier(entity).is_ok() {
                 let builtin_parser_info = maybe_builtin_parser_info.as_ref().ok_or_else(|| {
                     let msg = format!("could not find gazetteer entity '{}' in engine", entity);
-                    NluInjectionErrorKind::EntityNotInjectable { msg }
+                    anyhow!(msg)
                 })?;
                 builtin_parser_info
                     .gazetteer_parser_metadata
@@ -210,36 +203,34 @@ fn get_entity_parsers_dirs(
                     })
                     .ok_or_else(|| {
                         let msg = format!("could not find entity '{}' in engine", entity);
-                        NluInjectionErrorKind::EntityNotInjectable { msg }
+                        anyhow!(msg)
                     })
             } else if GrammarEntityKind::from_identifier(entity).is_ok() {
-                let msg = format!(
+                Err(anyhow!(
                     "Entity injection is not allowed for grammar entities: '{}'",
                     entity
-                );
-                Err(NluInjectionErrorKind::EntityNotInjectable { msg })
+                ))
             } else {
-                let msg = format!("Unknown entity: '{}'", entity);
-                Err(NluInjectionErrorKind::EntityNotInjectable { msg })
+                Err(anyhow!("Unknown entity: '{}'", entity))
             }?;
             Ok((entity.clone(), dir))
         })
-        .collect::<Result<HashMap<String, PathBuf>, NluInjectionError>>()
+        .collect::<anyhow::Result<HashMap<String, PathBuf>>>()
 }
 
 fn get_builtin_parser_info(
     builtin_parser_dir: &PathBuf,
-) -> Result<Option<BuiltinGazetteerParserInfo>, NluInjectionError> {
+) -> anyhow::Result<Option<BuiltinGazetteerParserInfo>> {
     let builtin_entity_parser_metadata_path = builtin_parser_dir.join("metadata.json");
     let builtin_entity_parser_metadata_file = fs::File::open(&builtin_entity_parser_metadata_path)
-        .with_context(|_| NluInjectionErrorKind::InternalInjectionError {
+        .with_context(|| NluInjectionErrorKind::InternalInjectionError {
             msg: format!(
                 "could not open builtin entity parser metadata file in {:?}",
                 builtin_entity_parser_metadata_path
             ),
         })?;
     let builtin_parser_metadata: BuiltinParserMetadata =
-        serde_json::from_reader(builtin_entity_parser_metadata_file).with_context(|_| {
+        serde_json::from_reader(builtin_entity_parser_metadata_file).with_context(|| {
             NluInjectionErrorKind::InternalInjectionError {
                 msg: format!(
                     "invalid builtin entity parser metadata format in {:?}",
@@ -253,14 +244,14 @@ fn get_builtin_parser_info(
     {
         let gazetteer_parser_metadata_path = gazetteer_parser_dir.join("metadata.json");
         let gazetteer_parser_metadata_file = fs::File::open(&gazetteer_parser_metadata_path)
-            .with_context(|_| NluInjectionErrorKind::InternalInjectionError {
+            .with_context(|| NluInjectionErrorKind::InternalInjectionError {
                 msg: format!(
                     "could not open gazetteer parser metadata file in {:?}",
                     gazetteer_parser_metadata_path
                 ),
             })?;
         let gazetteer_parser_metadata: GazetteerParserMetadata =
-            serde_json::from_reader(gazetteer_parser_metadata_file).with_context(|_| {
+            serde_json::from_reader(gazetteer_parser_metadata_file).with_context(|| {
                 NluInjectionErrorKind::InternalInjectionError {
                     msg: format!(
                         "invalid gazetteer parser metadata format in {:?}",
@@ -280,17 +271,17 @@ fn get_builtin_parser_info(
 
 fn get_custom_parser_info(
     custom_parser_dir: &PathBuf,
-) -> Result<CustomGazetteerParserInfo, NluInjectionError> {
+) -> anyhow::Result<CustomGazetteerParserInfo> {
     let custom_entity_parser_metadata_path = custom_parser_dir.join("metadata.json");
     let custom_entity_parser_metadata_file = fs::File::open(&custom_entity_parser_metadata_path)
-        .with_context(|_| NluInjectionErrorKind::InternalInjectionError {
+        .with_context(|| NluInjectionErrorKind::InternalInjectionError {
             msg: format!(
                 "could not open custom entity parser metadata file in {:?}",
                 custom_entity_parser_metadata_path
             ),
         })?;
     let custom_parser_metadata: CustomEntityParserMetadata =
-        serde_json::from_reader(custom_entity_parser_metadata_file).with_context(|_| {
+        serde_json::from_reader(custom_entity_parser_metadata_file).with_context(|| {
             NluInjectionErrorKind::InternalInjectionError {
                 msg: format!(
                     "invalid custom entity parser metadata format in {:?}",
@@ -302,14 +293,14 @@ fn get_custom_parser_info(
     let gazetteer_parser_dir = custom_parser_dir.join(custom_parser_metadata.parser_directory);
     let gazetteer_parser_metadata_path = gazetteer_parser_dir.join("metadata.json");
     let gazetteer_parser_metadata_file = fs::File::open(&gazetteer_parser_metadata_path)
-        .with_context(|_| NluInjectionErrorKind::InternalInjectionError {
+        .with_context(|| NluInjectionErrorKind::InternalInjectionError {
             msg: format!(
                 "could not open gazetteer parser metadata file in {:?}",
                 gazetteer_parser_metadata_path
             ),
         })?;
     let gazetteer_parser_metadata: GazetteerParserMetadata =
-        serde_json::from_reader(gazetteer_parser_metadata_file).with_context(|_| {
+        serde_json::from_reader(gazetteer_parser_metadata_file).with_context(|| {
             NluInjectionErrorKind::InternalInjectionError {
                 msg: format!(
                     "invalid gazetteer parser metadata format in {:?}",
@@ -325,25 +316,24 @@ fn get_custom_parser_info(
     Ok(parser_info)
 }
 
-fn get_nlu_engine_info<P: AsRef<Path>>(engine_dir: P) -> Result<NluEngineInfo, NluInjectionError> {
+fn get_nlu_engine_info<P: AsRef<Path>>(engine_dir: P) -> anyhow::Result<NluEngineInfo> {
     let engine_dataset_metadata_path = engine_dir.as_ref().join("nlu_engine.json");
-    let config_file = fs::File::open(engine_dataset_metadata_path.clone()).with_context(|_| {
-        NluInjectionErrorKind::InternalInjectionError {
+    let config_file = fs::File::open(engine_dataset_metadata_path.clone())
+        .with_context(|| NluInjectionErrorKind::InternalInjectionError {
             msg: format!(
                 "could not open nlu engine model file in {:?}",
                 engine_dataset_metadata_path
             ),
-        }
-    })?;
-    let nlu_engine_model: NluEngineModel =
-        serde_json::from_reader(config_file).with_context(|_| {
-            NluInjectionErrorKind::InternalInjectionError {
-                msg: format!(
-                    "invalid nlu engine model file in {:?}",
-                    engine_dataset_metadata_path
-                ),
-            }
-        })?;
+        })
+        .map_err(|e| anyhow!(e))?;
+    let nlu_engine_model: NluEngineModel = serde_json::from_reader(config_file)
+        .with_context(|| NluInjectionErrorKind::InternalInjectionError {
+            msg: format!(
+                "invalid nlu engine model file in {:?}",
+                engine_dataset_metadata_path
+            ),
+        })
+        .map_err(|e| anyhow!(e))?;
 
     let language = NluUtilsLanguage::from_str(&*nlu_engine_model.dataset_metadata.language_code)
         .map_err(|_| NluInjectionErrorKind::InternalInjectionError {
@@ -383,7 +373,7 @@ fn stem_entity_value(
     engine_info: &NluEngineInfo,
     custom_entity_parser_info: &CustomGazetteerParserInfo,
     maybe_stemmer: Option<&Arc<dyn Stemmer>>,
-) -> Result<Vec<GazetteerEntityValue>, NluInjectionError> {
+) -> Result<Vec<GazetteerEntityValue>, NluInjectionErrorKind> {
     let stemmed_entity_values = match custom_entity_parser_info.parser_usage {
         CustomEntityParserUsage::WithoutStems => vec![],
         _ => entity_values
@@ -406,7 +396,7 @@ fn stem_entity_value(
                     resolved_value: value.resolved_value.clone(),
                 })
             })
-            .collect::<Result<_, NluInjectionError>>()?,
+            .collect::<Result<_, NluInjectionErrorKind>>()?,
     };
     let all_values = match custom_entity_parser_info.parser_usage {
         CustomEntityParserUsage::WithStems => stemmed_entity_values,

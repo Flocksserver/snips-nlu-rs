@@ -5,7 +5,6 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use failure::{bail, format_err, ResultExt};
 use itertools::Itertools;
 use snips_nlu_ontology::{
     BuiltinEntityKind, IntentClassifierResult, IntentParserResult, Language, Slot, SlotValue,
@@ -13,7 +12,7 @@ use snips_nlu_ontology::{
 use snips_nlu_utils::string::substring_with_char_range;
 
 use crate::entity_parser::{BuiltinEntityParser, CustomEntityParser};
-use crate::errors::*;
+use crate::errors::SnipsNluError;
 use crate::intent_parser::*;
 use crate::models::{
     DatasetMetadata, Entity, ModelVersion, NluEngineModel, ProcessingUnitMetadata,
@@ -23,6 +22,7 @@ use crate::resources::loading::load_shared_resources;
 use crate::resources::SharedResources;
 use crate::slot_utils::*;
 use crate::utils::{extract_nlu_engine_zip_archive, EntityName, IterOps, SlotName};
+use anyhow::{anyhow, bail, Context, Result};
 
 pub struct SnipsNluEngine {
     dataset_metadata: DatasetMetadata,
@@ -34,7 +34,8 @@ impl SnipsNluEngine {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
         let model = SnipsNluEngine::load_model(&path)?;
 
-        let language = Language::from_str(&model.dataset_metadata.language_code)?;
+        let language =
+            Language::from_str(&model.dataset_metadata.language_code).map_err(|e| anyhow!(e))?;
 
         let resources_path = path.as_ref().join("resources").join(language.to_string());
         let builtin_parser_path = path.as_ref().join(&model.builtin_entity_parser);
@@ -67,13 +68,13 @@ impl SnipsNluEngine {
 
     fn load_model<P: AsRef<Path>>(path: P) -> Result<NluEngineModel> {
         let engine_model_path = path.as_ref().join("nlu_engine.json");
-        Self::check_model_version(&engine_model_path).with_context(|_| {
+        Self::check_model_version(&engine_model_path).with_context(|| {
             SnipsNluError::ModelLoad(engine_model_path.to_str().unwrap().to_string())
         })?;
         let model_file = fs::File::open(&engine_model_path)
-            .with_context(|_| format!("Could not open nlu engine file {:?}", &engine_model_path))?;
+            .with_context(|| format!("Could not open nlu engine file {:?}", &engine_model_path))?;
         let model = serde_json::from_reader(model_file)
-            .with_context(|_| format!("Invalid nlu engine file {:?}", &engine_model_path))?;
+            .with_context(|| format!("Invalid nlu engine file {:?}", &engine_model_path))?;
         Ok(model)
     }
 
@@ -88,11 +89,11 @@ impl SnipsNluEngine {
             .map(|parser_name| {
                 let parser_path = engine_dir.as_ref().join(parser_name);
                 let metadata_path = parser_path.join("metadata.json");
-                let metadata_file = fs::File::open(metadata_path).with_context(|_| {
+                let metadata_file = fs::File::open(metadata_path).with_context(|| {
                     format!("Could not open metadata file of parser '{}'", parser_name)
                 })?;
                 let metadata: ProcessingUnitMetadata = serde_json::from_reader(metadata_file)
-                    .with_context(|_| {
+                    .with_context(|| {
                         format!(
                             "Could not deserialize json metadata of parser '{}'",
                             parser_name
@@ -168,7 +169,7 @@ impl SnipsNluEngine {
             if internal_parsing_result.intent.intent_name.is_some() {
                 let resolved_slots = self
                     .resolve_slots(input, internal_parsing_result.slots, slots_alternatives)
-                    .with_context(|_| "Cannot resolve slots".to_string())?;
+                    .with_context(|| "Cannot resolve slots".to_string())?;
 
                 parsing_result = Some(IntentParserResult {
                     input: input.to_string(),
@@ -256,7 +257,7 @@ impl SnipsNluEngine {
             .flatten()
             .find(|intent| !all_intents.contains(*intent))
         {
-            return Err(format_err!(
+            return Err(anyhow!(
                 "Cannot use unknown intent '{}' in intents filter",
                 unknown_intent
             ));
@@ -413,9 +414,9 @@ impl SnipsNluEngine {
             .dataset_metadata
             .slot_name_mappings
             .get(intent_name)
-            .ok_or_else(|| format_err!("Unknown intent: {}", intent_name))?
+            .ok_or_else(|| anyhow!("Unknown intent: {}", intent_name))?
             .get(slot_name)
-            .ok_or_else(|| format_err!("Unknown slot: {}", &slot_name))?;
+            .ok_or_else(|| anyhow!("Unknown slot: {}", &slot_name))?;
 
         let slot = if let Some(custom_entity) = self.dataset_metadata.entities.get(entity_name) {
             extract_custom_slot(
@@ -489,7 +490,8 @@ fn extract_builtin_slot(
     builtin_entity_parser: Arc<dyn BuiltinEntityParser>,
     slot_alternatives: usize,
 ) -> Result<Option<Slot>> {
-    let builtin_entity_kind = BuiltinEntityKind::from_identifier(&entity_name)?;
+    let builtin_entity_kind =
+        BuiltinEntityKind::from_identifier(&entity_name).map_err(|e| anyhow!(e))?;
     Ok(builtin_entity_parser
         .extract_entities(
             &input,

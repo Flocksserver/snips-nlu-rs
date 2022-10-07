@@ -4,9 +4,9 @@ use std::sync::Arc;
 use snips_nlu_ontology::{BuiltinEntity, BuiltinEntityKind, Slot, SlotValue};
 
 use crate::entity_parser::{BuiltinEntityParser, CustomEntity, CustomEntityParser};
-use crate::errors::*;
 use crate::models::nlu_engine::Entity;
 use crate::utils::{EntityName, SlotName};
+use anyhow::Result;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InternalSlot {
@@ -22,7 +22,7 @@ pub fn resolve_builtin_slot(
     builtin_entity_parser: Arc<dyn BuiltinEntityParser>,
     slots_alternatives: usize,
 ) -> Result<Option<Slot>> {
-    let entity_kind = BuiltinEntityKind::from_identifier(&internal_slot.entity)?;
+    let entity_kind = BuiltinEntityKind::from_identifier(&internal_slot.entity).unwrap();
     let opt_matching_entity = match builtin_entities.iter().find(|entity| {
         entity.entity_kind == entity_kind && entity.range == internal_slot.char_range
     }) {

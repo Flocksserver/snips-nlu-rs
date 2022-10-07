@@ -1,4 +1,4 @@
-use crate::errors::*;
+use anyhow::Result;
 use itertools::Either;
 use snips_nlu_ontology::Language;
 use snips_nlu_utils::string::hash_str_to_i32;
@@ -102,7 +102,10 @@ world	123
         assert!(clusterer.values.is_right());
         assert_eq!(clusterer.get_cluster("hello"), Some("42".to_string()));
         assert_eq!(clusterer.get_cluster("world"), Some("123".to_string()));
-        assert_eq!(clusterer.get_cluster("\"yolo"), Some("cluster_which_is_not_u16".to_string()));
+        assert_eq!(
+            clusterer.get_cluster("\"yolo"),
+            Some("cluster_which_is_not_u16".to_string())
+        );
         assert_eq!(clusterer.get_cluster("unknown"), None);
     }
 
@@ -114,7 +117,7 @@ hello	42
 world	123
 yolo	65500
 "#
-            .as_ref();
+        .as_ref();
 
         // When
         let clusterer = HashMapWordClusterer::from_reader(clusters);

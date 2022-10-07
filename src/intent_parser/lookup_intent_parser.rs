@@ -1,4 +1,3 @@
-use crate::errors::*;
 use crate::intent_parser::InternalParsingResult;
 use crate::language::FromLanguage;
 use crate::models::LookupParserModel;
@@ -7,7 +6,9 @@ use crate::slot_utils::*;
 use crate::utils::{deduplicate_overlapping_entities, IntentName, MatchedEntity, SlotName};
 use crate::IntentParser;
 use crate::{EntityScope, GroupedEntityScope, InputHash, IntentId, SlotId};
-use failure::ResultExt;
+use anyhow::{anyhow, Context, Result};
+
+use crate::errors::SnipsNluError;
 use itertools::Itertools;
 use log::debug;
 use snips_nlu_ontology::{BuiltinEntityKind, IntentClassifierResult, Language};
@@ -45,14 +46,14 @@ impl LookupIntentParser {
         shared_resources: Arc<SharedResources>,
     ) -> Result<Self> {
         let parser_model_path = path.as_ref().join("intent_parser.json");
-        let model_file = File::open(&parser_model_path).with_context(|_| {
+        let model_file = File::open(&parser_model_path).with_context(|| {
             format!(
                 "Cannot open LookupIntentParser file '{:?}'",
                 &parser_model_path
             )
         })?;
         let model: LookupParserModel = serde_json::from_reader(model_file)
-            .with_context(|_| "Cannot deserialize LookupIntentParser json data")?;
+            .with_context(|| "Cannot deserialize LookupIntentParser json data")?;
         Self::new(model, shared_resources)
     }
 }
@@ -60,7 +61,7 @@ impl LookupIntentParser {
 impl LookupIntentParser {
     /// create a parser instance
     pub fn new(model: LookupParserModel, shared_resources: Arc<SharedResources>) -> Result<Self> {
-        let language = Language::from_str(&model.language_code)?;
+        let language = Language::from_str(&model.language_code).map_err(|e| anyhow!(e))?;
         let stop_words = if model.config.ignore_stop_words {
             shared_resources.stop_words.clone()
         } else {
@@ -261,7 +262,9 @@ impl LookupIntentParser {
         let builtin_scope: Vec<BuiltinEntityKind> = entity_scope
             .builtin
             .iter()
-            .map(|identifier| BuiltinEntityKind::from_identifier(identifier))
+            .map(|identifier| {
+                BuiltinEntityKind::from_identifier(identifier).map_err(|e| anyhow!(e))
+            })
             .collect::<Result<Vec<_>>>()?;
         let builtin_entities = self
             .shared_resources

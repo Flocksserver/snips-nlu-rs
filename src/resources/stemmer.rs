@@ -1,4 +1,4 @@
-use crate::errors::*;
+use anyhow::Result;
 use snips_nlu_utils::string::{hash_str_to_i32, normalize};
 use std::collections::HashMap;
 use std::io::Read;

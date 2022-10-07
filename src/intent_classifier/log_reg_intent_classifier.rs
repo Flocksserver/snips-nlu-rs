@@ -4,17 +4,16 @@ use std::iter::FromIterator;
 use std::path::Path;
 use std::sync::Arc;
 
-use failure::ResultExt;
 use itertools::Itertools;
 use log::{debug, info};
 use ndarray::prelude::*;
 use snips_nlu_ontology::IntentClassifierResult;
 
-use crate::errors::*;
 use crate::intent_classifier::{Featurizer, IntentClassifier};
 use crate::models::IntentClassifierModel;
 use crate::resources::SharedResources;
 use crate::utils::IntentName;
+use anyhow::{Context, Result};
 
 use super::logreg::MulticlassLogisticRegression;
 
@@ -34,14 +33,14 @@ impl LogRegIntentClassifier {
             path.as_ref()
         );
         let classifier_model_path = path.as_ref().join("intent_classifier.json");
-        let model_file = File::open(&classifier_model_path).with_context(|_| {
+        let model_file = File::open(&classifier_model_path).with_context(|| {
             format!(
                 "Cannot open LogRegIntentClassifier file '{:?}'",
                 &classifier_model_path
             )
         })?;
         let model: IntentClassifierModel = serde_json::from_reader(model_file)
-            .with_context(|_| "Cannot deserialize LogRegIntentClassifier json data")?;
+            .with_context(|| "Cannot deserialize LogRegIntentClassifier json data")?;
 
         let featurizer: Option<Featurizer> = if let Some(featurizer_name) = model.featurizer {
             let featurizer_path = path.as_ref().join(&featurizer_name);

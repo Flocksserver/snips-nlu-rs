@@ -5,7 +5,6 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use failure::{format_err, ResultExt};
 use itertools::Itertools;
 use ndarray::prelude::*;
 use snips_nlu_ontology::{BuiltinEntityKind, Language};
@@ -13,13 +12,13 @@ use snips_nlu_utils::language::Language as NluUtilsLanguage;
 use snips_nlu_utils::string::normalize;
 use snips_nlu_utils::token::{compute_all_ngrams, tokenize_light};
 
-use crate::errors::*;
 use crate::language::FromLanguage;
 use crate::models::{CooccurrenceVectorizerModel, FeaturizerModel, TfidfVectorizerModel};
 use crate::resources::stemmer::Stemmer;
 use crate::resources::word_clusterer::WordClusterer;
 use crate::resources::SharedResources;
 use crate::utils::{replace_entities, MatchedEntity};
+use anyhow::{anyhow, Context, Result};
 
 type WordPair = (String, String);
 
@@ -34,11 +33,11 @@ impl Featurizer {
         shared_resources: Arc<SharedResources>,
     ) -> Result<Self> {
         let featurizer_model_path = path.as_ref().join("featurizer.json");
-        let model_file = File::open(&featurizer_model_path).with_context(|_| {
+        let model_file = File::open(&featurizer_model_path).with_context(|| {
             format!("Cannot open Featurizer file '{:?}'", &featurizer_model_path)
         })?;
         let model: FeaturizerModel = serde_json::from_reader(model_file)
-            .with_context(|_| "Cannot deserialize FeaturizerModel json data")?;
+            .with_context(|| "Cannot deserialize FeaturizerModel json data")?;
 
         // Load tf-idf vectorizer
         let tfidf_vectorizer_path = path.as_ref().join(model.tfidf_vectorizer);
@@ -103,14 +102,14 @@ impl TfidfVectorizer {
         shared_resources: Arc<SharedResources>,
     ) -> Result<Self> {
         let parser_model_path = path.as_ref().join("vectorizer.json");
-        let model_file = File::open(&parser_model_path).with_context(|_| {
+        let model_file = File::open(&parser_model_path).with_context(|| {
             format!(
                 "Cannot open TfidfVectorizer file '{:?}'",
                 &parser_model_path
             )
         })?;
         let model: TfidfVectorizerModel = serde_json::from_reader(model_file)
-            .with_context(|_| "Cannot deserialize TfidfVectorizer json data")?;
+            .with_context(|| "Cannot deserialize TfidfVectorizer json data")?;
         Self::new(model, shared_resources)
     }
 }
@@ -123,7 +122,8 @@ impl TfidfVectorizer {
         let vocabulary = model.vectorizer.vocab;
         let idf_diag = model.vectorizer.idf_diag;
 
-        let ontology_language = Language::from_str(model.language_code.as_ref())?;
+        let ontology_language =
+            Language::from_str(model.language_code.as_ref()).map_err(|e| anyhow!(e))?;
         let language = NluUtilsLanguage::from_language(ontology_language);
 
         let opt_word_clusterer = if let Some(clusters_name) = model.config.word_clusters_name {
@@ -133,7 +133,7 @@ impl TfidfVectorizer {
                     .get(&clusters_name)
                     .cloned()
                     .ok_or_else(|| {
-                        format_err!(
+                        anyhow!(
                             "Cannot find word clusters '{}' in shared resources",
                             clusters_name
                         )
@@ -148,7 +148,7 @@ impl TfidfVectorizer {
             .iter()
             .map(|ent| {
                 BuiltinEntityKind::from_identifier(ent)
-                    .map_err(|_| format_err!("Unknown builtin entity {:?}", ent))
+                    .map_err(|_| anyhow!("Unknown builtin entity {:?}", ent))
             })
             .collect::<Result<Vec<BuiltinEntityKind>>>()?;
 
@@ -158,7 +158,7 @@ impl TfidfVectorizer {
                     .stemmer
                     .as_ref()
                     .cloned()
-                    .ok_or_else(|| format_err!("Cannot find stemmer in shared resources"))?,
+                    .ok_or_else(|| anyhow!("Cannot find stemmer in shared resources"))?,
             )
         } else {
             None
@@ -258,14 +258,14 @@ impl CooccurrenceVectorizer {
         shared_resources: Arc<SharedResources>,
     ) -> Result<Self> {
         let parser_model_path = path.as_ref().join("vectorizer.json");
-        let model_file = File::open(&parser_model_path).with_context(|_| {
+        let model_file = File::open(&parser_model_path).with_context(|| {
             format!(
                 "Cannot open CooccurrenceVectorizer file '{:?}'",
                 &parser_model_path
             )
         })?;
         let model: CooccurrenceVectorizerModel = serde_json::from_reader(model_file)
-            .with_context(|_| "Cannot deserialize CooccurrenceVectorizer json data")?;
+            .with_context(|| "Cannot deserialize CooccurrenceVectorizer json data")?;
         Self::new(model, shared_resources)
     }
 }
@@ -280,7 +280,7 @@ impl CooccurrenceVectorizer {
             .iter()
             .map(|ent| {
                 BuiltinEntityKind::from_identifier(ent)
-                    .map_err(|_| format_err!("Unknown builtin entity {:?}", ent))
+                    .map_err(|_| anyhow!("Unknown builtin entity {:?}", ent))
             })
             .collect::<Result<Vec<BuiltinEntityKind>>>()?;
 
@@ -295,7 +295,8 @@ impl CooccurrenceVectorizer {
         let keep_order = model.config.keep_order;
         let unknown_words_replacement_string = model.config.unknown_words_replacement_string;
 
-        let ontology_language = Language::from_str(model.language_code.as_ref())?;
+        let ontology_language =
+            Language::from_str(model.language_code.as_ref()).map_err(|e| anyhow!(e))?;
         let language = NluUtilsLanguage::from_language(ontology_language);
 
         Ok(Self {

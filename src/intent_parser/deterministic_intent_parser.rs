@@ -5,7 +5,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use failure::{format_err, ResultExt};
+use crate::errors::SnipsNluError;
 use log::{debug, info};
 use regex::{Regex, RegexBuilder};
 use snips_nlu_ontology::{BuiltinEntityKind, IntentClassifierResult, Language};
@@ -14,7 +14,6 @@ use snips_nlu_utils::range::ranges_overlap;
 use snips_nlu_utils::string::{convert_to_char_range, substring_with_char_range};
 use snips_nlu_utils::token::{tokenize, tokenize_light};
 
-use crate::errors::*;
 use crate::language::FromLanguage;
 use crate::models::DeterministicParserModel;
 use crate::resources::SharedResources;
@@ -23,6 +22,7 @@ use crate::utils::{
     deduplicate_overlapping_items, replace_entities, EntityName, IntentName, MatchedEntity,
     SlotName,
 };
+use anyhow::{anyhow, Context, Result};
 
 use super::{internal_parsing_result, IntentParser, InternalParsingResult};
 use itertools::Itertools;
@@ -48,14 +48,14 @@ impl DeterministicIntentParser {
             path.as_ref()
         );
         let parser_model_path = path.as_ref().join("intent_parser.json");
-        let model_file = File::open(&parser_model_path).with_context(|_| {
+        let model_file = File::open(&parser_model_path).with_context(|| {
             format!(
                 "Cannot open DeterministicIntentParser file '{:?}'",
                 &parser_model_path
             )
         })?;
         let model: DeterministicParserModel = serde_json::from_reader(model_file)
-            .with_context(|_| "Cannot deserialize DeterministicIntentParser json data")?;
+            .with_context(|| "Cannot deserialize DeterministicIntentParser json data")?;
         let parser = Self::new(model, shared_resources);
         info!("Deterministic intent parser loaded");
         parser
@@ -67,7 +67,7 @@ impl DeterministicIntentParser {
         model: DeterministicParserModel,
         shared_resources: Arc<SharedResources>,
     ) -> Result<Self> {
-        let language = Language::from_str(&model.language_code)?;
+        let language = Language::from_str(&model.language_code).map_err(|e| anyhow!(e))?;
         let entity_scopes = model
             .slot_names_to_entities
             .iter()
@@ -239,7 +239,7 @@ impl DeterministicIntentParser {
             if let Some(matching_result_formatted) = self
                 .regexes_per_intent
                 .get(intent)
-                .ok_or_else(|| format_err!("No associated regexes for intent '{}'", intent))?
+                .ok_or_else(|| anyhow!("No associated regexes for intent '{}'", intent))?
                 .iter()
                 .find_map(|regex| {
                     self.get_matching_result(input, &*cleaned_input, regex, intent, None)

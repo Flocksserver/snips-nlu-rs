@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use failure::format_err;
 use itertools::Itertools;
 use snips_nlu_ontology::BuiltinEntityKind;
 use snips_nlu_utils::range::ranges_overlap;
@@ -9,11 +8,11 @@ use snips_nlu_utils::string::{get_shape, normalize};
 use snips_nlu_utils::token::Token;
 
 use crate::entity_parser::{BuiltinEntityParser, CustomEntityParser};
-use crate::errors::*;
 use crate::resources::gazetteer::Gazetteer;
 use crate::resources::stemmer::Stemmer;
 use crate::resources::word_clusterer::WordClusterer;
 use crate::resources::SharedResources;
+use anyhow::{anyhow, Result};
 
 use super::crf_utils::{get_scheme_prefix, TaggingScheme};
 use super::feature_processor::{Feature, FeatureKindRepr};
@@ -120,7 +119,7 @@ impl Feature for NgramFeature {
                     .get(&gazetteer_name)
                     .cloned()
                     .ok_or_else(|| {
-                        format_err!(
+                        anyhow!(
                             "Cannot find gazetteer '{}' in shared resources",
                             gazetteer_name
                         )
@@ -135,7 +134,7 @@ impl Feature for NgramFeature {
                 shared_resources
                     .stemmer
                     .clone()
-                    .ok_or_else(|| format_err!("Cannot find stemmer in shared resources"))?,
+                    .ok_or_else(|| anyhow!("Cannot find stemmer in shared resources"))?,
             )
         } else {
             None
@@ -286,7 +285,7 @@ impl Feature for CustomEntityMatchFeature {
                 shared_resources
                     .stemmer
                     .clone()
-                    .ok_or_else(|| format_err!("Cannot find stemmer in shared resources"))?,
+                    .ok_or_else(|| anyhow!("Cannot find stemmer in shared resources"))?,
             )
         } else {
             None
@@ -349,7 +348,7 @@ impl Feature for BuiltinEntityMatchFeature {
         builtin_entity_labels
             .into_iter()
             .map(|label| {
-                let builtin_entity_kind = BuiltinEntityKind::from_identifier(&label)?;
+                let builtin_entity_kind = BuiltinEntityKind::from_identifier(&label).unwrap();
                 Ok(Box::new(Self {
                     tagging_scheme,
                     builtin_entity_kind,
@@ -396,7 +395,7 @@ impl Feature for WordClusterFeature {
             .get(&cluster_name)
             .cloned()
             .ok_or_else(|| {
-                format_err!(
+                anyhow!(
                     "Cannot find word clusters '{}' in shared resources",
                     cluster_name
                 )
@@ -436,9 +435,9 @@ fn transform_tokens(tokens: &[Token], stemmer: Option<Arc<dyn Stemmer>>) -> Vec<
 fn parse_as_string(args: &HashMap<String, serde_json::Value>, arg_name: &str) -> Result<String> {
     Ok(args
         .get(arg_name)
-        .ok_or_else(|| format_err!("can't retrieve '{}' parameter", arg_name))?
+        .ok_or_else(|| anyhow!("can't retrieve '{}' parameter", arg_name))?
         .as_str()
-        .ok_or_else(|| format_err!("'{}' isn't a string", arg_name))?
+        .ok_or_else(|| anyhow!("'{}' isn't a string", arg_name))?
         .to_string())
 }
 
@@ -448,7 +447,7 @@ fn parse_as_opt_string(
 ) -> Result<Option<String>> {
     Ok(args
         .get(arg_name)
-        .ok_or_else(|| format_err!("can't retrieve '{}' parameter", arg_name))?
+        .ok_or_else(|| anyhow!("can't retrieve '{}' parameter", arg_name))?
         .as_str()
         .map(|s| s.to_string()))
 }
@@ -458,13 +457,13 @@ fn parse_as_vec_string(
     arg_name: &str,
 ) -> Result<Vec<String>> {
     args.get(arg_name)
-        .ok_or_else(|| format_err!("can't retrieve '{}' parameter", arg_name))?
+        .ok_or_else(|| anyhow!("can't retrieve '{}' parameter", arg_name))?
         .as_array()
-        .ok_or_else(|| format_err!("'{}' isn't an array", arg_name))?
+        .ok_or_else(|| anyhow!("'{}' isn't an array", arg_name))?
         .iter()
         .map(|v| {
             Ok(v.as_str()
-                .ok_or_else(|| format_err!("'{}' is not a string", v))?
+                .ok_or_else(|| anyhow!("'{}' is not a string", v))?
                 .to_string())
         })
         .collect()
@@ -473,17 +472,17 @@ fn parse_as_vec_string(
 fn parse_as_bool(args: &HashMap<String, serde_json::Value>, arg_name: &str) -> Result<bool> {
     Ok(args
         .get(arg_name)
-        .ok_or_else(|| format_err!("can't retrieve '{}' parameter", arg_name))?
+        .ok_or_else(|| anyhow!("can't retrieve '{}' parameter", arg_name))?
         .as_bool()
-        .ok_or_else(|| format_err!("'{}' isn't a bool", arg_name))?)
+        .ok_or_else(|| anyhow!("'{}' isn't a bool", arg_name))?)
 }
 
 fn parse_as_u64(args: &HashMap<String, serde_json::Value>, arg_name: &str) -> Result<u64> {
     Ok(args
         .get(arg_name)
-        .ok_or_else(|| format_err!("can't retrieve '{}' parameter", arg_name))?
+        .ok_or_else(|| anyhow!("can't retrieve '{}' parameter", arg_name))?
         .as_u64()
-        .ok_or_else(|| format_err!("'{}' isn't a u64", arg_name))?)
+        .ok_or_else(|| anyhow!("'{}' isn't a u64", arg_name))?)
 }
 
 #[cfg(test)]

@@ -4,7 +4,6 @@ use std::result::Result as StdResult;
 use std::str::FromStr;
 use std::sync::Mutex;
 
-use failure::ResultExt;
 use itertools::Itertools;
 use log::info;
 use serde::de::{Error as SerdeError, Unexpected};
@@ -15,9 +14,9 @@ use snips_nlu_utils::language::Language as NluUtilsLanguage;
 use snips_nlu_utils::token::*;
 
 use crate::entity_parser::utils::Cache;
-use crate::errors::*;
 use crate::language::FromLanguage;
 use crate::utils::EntityName;
+use anyhow::{anyhow, Context, Result};
 
 pub type CustomEntity = GazetteerEntityMatch<String>;
 
@@ -108,7 +107,8 @@ impl CachingCustomEntityParser {
                 &cleaned_input,
                 filter_entity_kinds,
                 max_alternative_resolved_values,
-            )?
+            )
+            .map_err(|e| anyhow!(e))?
             .into_iter()
             .map(|mut entity_match| {
                 let range_start = entity_match.range.start;
@@ -163,17 +163,19 @@ impl CachingCustomEntityParser {
     pub fn from_path<P: AsRef<Path>>(path: P, cache_capacity: usize) -> Result<Self> {
         info!("Loading custom entity parser ({:?}) ...", path.as_ref());
         let metadata_path = path.as_ref().join("metadata.json");
-        let metadata_file = File::open(&metadata_path).with_context(|_| {
+        let metadata_file = File::open(&metadata_path).with_context(|| {
             format!(
                 "Cannot open metadata file for custom entity parser at path: {:?}",
                 metadata_path
             )
         })?;
         let metadata: CustomEntityParserMetadata = serde_json::from_reader(metadata_file)
-            .with_context(|_| "Cannot deserialize custom entity parser metadata")?;
-        let language = NluUtilsLanguage::from_language(Language::from_str(&metadata.language)?);
+            .with_context(|| "Cannot deserialize custom entity parser metadata")?;
+        let language = NluUtilsLanguage::from_language(
+            Language::from_str(&metadata.language).map_err(|e| anyhow!(e))?,
+        );
         let gazetteer_parser_path = path.as_ref().join(&metadata.parser_directory);
-        let parser = GazetteerParser::from_path(gazetteer_parser_path)?;
+        let parser = GazetteerParser::from_path(gazetteer_parser_path).map_err(|e| anyhow!(e))?;
         let cache = Mutex::new(Cache::new(cache_capacity));
         info!("Custom entity parser loaded");
         Ok(Self {
@@ -273,6 +275,9 @@ mod tests {
         }];
         assert_eq!(Vec::<CustomEntity>::new(), entities_empty_scope);
         assert_eq!(expected_entities_no_scope, entities_no_scope);
-        assert_eq!(expected_entities_with_alternatives, entities_with_alternatives);
+        assert_eq!(
+            expected_entities_with_alternatives,
+            entities_with_alternatives
+        );
     }
 }
