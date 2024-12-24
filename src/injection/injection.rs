@@ -141,12 +141,9 @@ impl<P: AsRef<Path>> NluInjector<P> {
             info!("Injecting values for entity '{}'", entity);
 
             let parser_dir = &parsers_dirs[&entity];
-            let mut gazetteer_parser =
-                GazetteerEntityParser::from_folder(parser_dir).map_err(|e| anyhow!(e))?;
+            let mut gazetteer_parser = GazetteerEntityParser::from_folder(parser_dir)?;
 
-            gazetteer_parser
-                .inject_new_values(new_entity_values, true, self.from_vanilla)
-                .map_err(|e| anyhow!(e))?;
+            gazetteer_parser = gazetteer_parser.inject_new_values(new_entity_values, true, self.from_vanilla);
 
             fs::remove_dir_all(parser_dir.clone()).with_context(|| {
                 NluInjectionErrorKind::InternalInjectionError {
@@ -154,7 +151,7 @@ impl<P: AsRef<Path>> NluInjector<P> {
                 }
             })?;
 
-            gazetteer_parser.dump(&parser_dir).map_err(|e| anyhow!(e))?;
+            gazetteer_parser.dump(&parser_dir)?;
         }
 
         info!("Injection performed with success !");
