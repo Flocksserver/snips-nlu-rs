@@ -20,7 +20,7 @@ members = [
 crfsuite = { git = "https://github.com/Flocksserver/crfsuite-rs" }
 snips-nlu-ontology = { git = "https://github.com/snipsco/snips-nlu-ontology", tag = "0.67.1" }
 snips-nlu-utils = { git = "https://github.com/snipsco/snips-nlu-utils", tag = "0.9.1" }
-snips-nlu-parsers = { git = "https://github.com/snipsco/snips-nlu-parsers", tag = "0.4.3" }
+snips-nlu-parsers = { git = "https://github.com/Flocksserver/snips-nlu-parsers"}
 base64 = "0.10"
 itertools = { version = "0.8", default-features = false }
 log = "0.4"
